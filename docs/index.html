@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<title>Budget Tracker</title>
+<style>
+:root{--bg:#f4f6f5;--card:#fff;--ink:#14201e;--mute:#6b7c78;--line:#e3e9e7;--brand:#0f766e;--bad:#c2410c;--good:#15803d;--warn:#b45309}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1514;--card:#16201e;--ink:#e8f0ee;--mute:#8aa09b;--line:#243230;--brand:#2dd4bf;--bad:#fb923c;--good:#4ade80;--warn:#fbbf24}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,sans-serif;padding-bottom:78px}
+header{position:sticky;top:0;z-index:5;background:var(--brand);color:#fff;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;padding-top:calc(10px + env(safe-area-inset-top))}
+header h1{font-size:17px;margin:0}
+header button{background:rgba(255,255,255,.18);color:#fff;border:0;border-radius:8px;width:34px;height:34px;font-size:18px}
+.wrap{max-width:720px;margin:0 auto;padding:12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.card h3{margin:0 0 8px;font-size:13px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.big{font-size:22px;font-weight:700}
+.sub{font-size:12px;color:var(--mute)}
+.good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.hero{background:var(--brand);color:#fff;border:0}.hero .sub{color:#d5f3ef}.hero h3{color:#d5f3ef}
+nav{position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:6}
+nav button{flex:1;background:none;border:0;padding:10px 0 8px;color:var(--mute);font-size:11px}
+nav button b{display:block;font-size:19px;font-weight:400}
+nav button.on{color:var(--brand);font-weight:700}
+.row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}
+.row .grow{flex:1;min-width:0}
+.row .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.amt{font-weight:600;white-space:nowrap}
+.pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:var(--line);color:var(--mute);margin-right:4px}
+.pill.me{background:var(--brand);color:#fff}
+.bar{height:9px;border-radius:9px;background:var(--line);overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:var(--brand)}
+.bar i.over{background:var(--bad)}
+.stack{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line)}
+.fab{position:fixed;right:16px;bottom:86px;width:54px;height:54px;border-radius:50%;background:var(--brand);color:#fff;border:0;font-size:28px;box-shadow:0 4px 14px rgba(0,0,0,.3);z-index:7}
+.btn{background:var(--brand);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-size:14px}
+.btn.alt{background:var(--line);color:var(--ink)}
+.btn.sm{padding:5px 10px;font-size:12px}
+dialog{border:0;border-radius:16px;padding:16px;width:min(420px,94vw);background:var(--card);color:var(--ink)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+label{display:block;font-size:12px;color:var(--mute);margin:8px 0 3px}
+input,select{width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:15px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:5px 11px;font-size:12px}
+.chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.legend{display:flex;align-items:center;gap:8px;font-size:13px;padding:2px 0}
+.dot{width:10px;height:10px;border-radius:50%}
+.two{display:flex;gap:8px}.two>*{flex:1}
+</style>
+</head>
+<body>
+<header>
+  <button id="prev">‹</button>
+  <h1 id="mTitle"></h1>
+  <button id="next">›</button>
+</header>
+<div class="wrap" id="view"></div>
+<button class="fab" id="fab">+</button>
+<nav id="nav"></nav>
+<dialog id="dlg"></dialog>
+
+<script>
+/* ---------- data ---------- */
+const KEY='budget-tracker-v1';
+const SOURCES=['Cash','Atome','ShopeePay'];
+const CATS=['Bills','Transport','Food','Shopping','Installments','Savings','Other'];
+const GROUP_DEFAULT={Bills:'Needs',Transport:'Needs',Food:'Needs',Shopping:'Wants',Installments:'Wants',Other:'Wants',Savings:'Savings'};
+const COLORS=['#0f766e','#f59e0b','#6366f1','#ef4444','#14b8a6','#a855f7','#64748b','#84cc16'];
+const uid=()=>Math.random().toString(36).slice(2,9);
+const peso=n=>'₱'+(Math.round(n*100)/100).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+const sum=a=>a.reduce((x,y)=>x+y,0);
+const r2=n=>Math.round(n*100)/100;
+
+function seed(){
+  const m='2026-10', t=[], pay=[];
+  const add=(desc,amount,owner,source,category,rec)=>t.push({id:uid(),month:m,date:m+'-01',desc,amount,owner,source,category,rec:!!rec});
+  const rcv=(person,amount,note)=>pay.push({id:uid(),month:m,date:m+'-15',person,amount,note});
+  // my share
+  add('Atome ni mama (my share)',3570.67,'Me','Atome','Installments');
+  add('Atome ko (my share)',6339.82,'Me','Atome','Installments');
+  add('Shopee purchases (mine)',6320.55,'Me','ShopeePay','Shopping');
+  add('Transportation',260,'Me','Cash','Transport',true);
+  add('Bills',5000,'Me','Cash','Bills',true);
+  // others using my credit
+  add('Atome ko – Lennard',5000,'Lennard','Atome','Installments'); rcv('Lennard',5000,'Atome ko');
+  add('Atome ko – Angela',5000,'Angela','Atome','Installments'); rcv('Angela',5000,'Atome ko');
+  add('Atome ni mama – Angela',3570.67,'Angela','Atome','Installments'); rcv('Angela',3570.67,'Atome ni mama');
+  add('Atome ni mama – Papa',2747.68,'Papa','Atome','Installments'); rcv('Papa',2747.68,'Atome ni mama');
+  add('Atome ni mama – Lennard',2500,'Lennard','Atome','Installments'); rcv('Lennard',2500,'Atome ni mama');
+  [269.4,46.12,343.81,668.8,79.91,79.91].forEach(a=>add('Shopee – Lennard',a,'Lennard','ShopeePay','Shopping'));
+  add('Shopee – Mama',367.7,'Mama','ShopeePay','Shopping');
+  const inc=[
+    {id:uid(),month:m,label:'Sahod',amount:16450,rec:true},
+    {id:uid(),month:m,label:'Cover',amount:5000,rec:false},
+    {id:uid(),month:m,label:'OT',amount:50,rec:false}];
+  return {people:['Angela','Lennard','Mama','Papa'],tx:t,pay,inc,bpay:[],
+    alloc:{Needs:50,Wants:30,Savings:20},catBudget:{},groups:GROUP_DEFAULT};
+}
+let S;
+try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!S||!S.tx)S=seed();
+S.bpay=S.bpay||[];
+const save=()=>localStorage.setItem(KEY,JSON.stringify(S));
+
+/* ---------- state ---------- */
+let month='2026-10', tab='home', filter='All';
+const mLabel=m=>{const[y,mo]=m.split('-');return new Date(y,mo-1,1).toLocaleString('en',{month:'long',year:'numeric'})};
+const shift=(m,d)=>{const[y,mo]=m.split('-').map(Number);const x=new Date(y,mo-1+d,1);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')};
+const owners=()=>['Me',...S.people];
+
+function calc(m){
+  const tx=S.tx.filter(x=>x.month===m), inc=S.inc.filter(x=>x.month===m), pay=S.pay.filter(x=>x.month===m);
+  const income=sum(inc.map(x=>x.amount)), mine=tx.filter(x=>x.owner==='Me');
+  const mySpend=sum(mine.map(x=>x.amount)), allSpend=sum(tx.map(x=>x.amount));
+  const received=sum(pay.map(x=>x.amount));
+  const othersTotal=allSpend-mySpend;
+  const owed={}; S.people.forEach(p=>owed[p]={charged:0,paid:0});
+  tx.filter(x=>x.owner!=='Me').forEach(x=>{(owed[x.owner]=owed[x.owner]||{charged:0,paid:0}).charged+=x.amount});
+  pay.forEach(x=>{(owed[x.person]=owed[x.person]||{charged:0,paid:0}).paid+=x.amount});
+  const outstanding=sum(Object.values(owed).map(o=>Math.max(0,o.charged-o.paid)));
+  const bpay=S.bpay.filter(x=>x.month===m);
+  const bills=['Atome','ShopeePay'].map(s=>{
+    const due=sum(tx.filter(x=>x.source===s).map(x=>x.amount));
+    const paid=sum(bpay.filter(x=>x.source===s).map(x=>x.amount));
+    return {s,due,paid,left:r2(Math.max(0,due-paid))}});
+  const billsLeft=sum(bills.map(b=>b.left)), billsPaid=sum(bpay.map(x=>x.amount));
+  const cashSpend=sum(tx.filter(x=>x.source==='Cash').map(x=>x.amount));
+  return {tx,inc,pay,bpay,bills,billsLeft,billsPaid,income,mine,mySpend,allSpend,received,othersTotal,owed,outstanding,
+    myLeft:income-mySpend, cashNow:income+received-cashSpend-billsPaid, cashIfAllPay:income-mySpend};
+}
+
+/* ---------- charts ---------- */
+function donut(items){
+  const total=sum(items.map(i=>i.v))||1, R=52, C=2*Math.PI*R; let off=0;
+  const arcs=items.map((i,k)=>{const len=C*i.v/total;const s=`<circle r="${R}" cx="70" cy="70" fill="none" stroke="${COLORS[k%8]}" stroke-width="22" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 70 70)"/>`;off+=len;return s}).join('');
+  const leg=items.map((i,k)=>`<div class="legend"><span class="dot" style="background:${COLORS[k%8]}"></span><span style="flex:1">${i.l}</span><b>${peso(i.v)}</b></div>`).join('');
+  return `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><svg width="140" height="140" viewBox="0 0 140 140">${items.length?arcs:'<circle r="52" cx="70" cy="70" fill="none" stroke="#ccc" stroke-width="22"/>'}<text x="70" y="75" text-anchor="middle" font-size="13" fill="currentColor">${items.length?Math.round(total):'—'}</text></svg><div style="flex:1;min-width:150px">${leg||'<span class="sub">No spending yet</span>'}</div></div>`;
+}
+function trend(){
+  const ms=[];for(let i=5;i>=0;i--)ms.push(shift(month,-i));
+  const vals=ms.map(m=>calc(m).myLeft), max=Math.max(...vals.map(Math.abs),1);
+  const bars=ms.map((m,i)=>{const h=Math.abs(vals[i])/max*70;const neg=vals[i]<0;
+    return `<div style="flex:1;text-align:center"><div style="height:80px;display:flex;align-items:flex-end;justify-content:center"><div style="width:70%;height:${h}px;background:${neg?'var(--bad)':'var(--brand)'};border-radius:5px 5px 0 0"></div></div><div class="sub">${new Date(m+'-01').toLocaleString('en',{month:'short'})}</div><div style="font-size:10px">${Math.round(vals[i])}</div></div>`}).join('');
+  return `<div style="display:flex;gap:4px">${bars}</div>`;
+}
+
+/* ---------- views ---------- */
+function home(c){
+  const catMap={};c.mine.forEach(x=>catMap[x.category]=(catMap[x.category]||0)+x.amount);
+  const items=Object.entries(catMap).map(([l,v])=>({l,v})).sort((a,b)=>b.v-a.v);
+  const src=SOURCES.map(s=>{const me=sum(c.tx.filter(x=>x.source===s&&x.owner==='Me').map(x=>x.amount));const ot=sum(c.tx.filter(x=>x.source===s&&x.owner!=='Me').map(x=>x.amount));return{s,me,ot}}).filter(x=>x.me+x.ot>0);
+  const pct=c.income?Math.round(c.mySpend/c.income*100):0;
+  return `
+  <div class="card hero"><h3>My money left (personal)</h3>
+    <div class="big" style="font-size:30px">${peso(c.myLeft)}</div>
+    <div class="sub">Income ${peso(c.income)} − my spending ${peso(c.mySpend)} (${pct}% used)</div>
+    <div class="bar" style="background:rgba(255,255,255,.25)"><i style="width:${Math.min(100,pct)}%;background:#fff"></i></div></div>
+  <div class="grid">
+    <div class="card"><h3>Others still owe</h3><div class="big ${c.outstanding>0?'warn':'good'}">${peso(c.outstanding)}</div><div class="sub">of ${peso(c.othersTotal)} charged</div></div>
+    <div class="card"><h3>Cash on hand</h3><div class="big ${c.cashNow<0?'bad':''}">${peso(c.cashNow)}</div><div class="sub">${peso(c.cashNow-c.billsLeft)} after unpaid bills</div></div>
+  </div>
+  <div class="sub" style="margin:-4px 0 10px">Once everyone pays you and all bills are paid, you end with ${peso(c.cashIfAllPay)}.</div>
+  <div class="card"><h3>Bills I need to pay</h3>
+  ${c.bills.map(b=>`<div class="row"><div class="grow"><b>${b.s}</b><div class="sub">Due ${peso(b.due)} · Paid ${peso(b.paid)}</div>
+    <div class="bar"><i style="width:${b.due?Math.min(100,b.paid/b.due*100):0}%"></i></div></div>
+    <div style="text-align:right"><div class="amt ${b.left>0?'warn':'good'}">${b.left>0?peso(b.left)+' left':'Paid'}</div>
+    ${b.left>0?`<button class="btn sm" data-bill="${b.s}">Pay</button>`:''}</div></div>`).join('')}
+  ${c.bpay.length?'<div class="sub" style="margin-top:8px">Payments I made (tap to edit)</div>'+c.bpay.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="row" data-bpay="${x.id}"><div class="grow">${x.source}<div class="sub">${x.date}${x.note?' · '+x.note:''}</div></div><div class="amt">${peso(x.amount)}</div></div>`).join(''):''}</div>
+  <div class="card"><h3>My spending by category</h3>${donut(items)}</div>
+  <div class="card"><h3>Due per account (mine vs others)</h3>${src.map(x=>`
+    <div style="margin:8px 0"><div class="row" style="border:0;padding:0"><b class="grow">${x.s}</b><span class="amt">${peso(x.me+x.ot)}</span></div>
+    <div class="stack"><div style="width:${x.me/(x.me+x.ot)*100}%;background:var(--brand)"></div><div style="flex:1;background:var(--warn);opacity:.6"></div></div>
+    <div class="sub">Mine ${peso(x.me)} · Others ${peso(x.ot)}</div></div>`).join('')||'<span class="sub">Nothing yet</span>'}</div>
+  <div class="card"><h3>Personal leftover, last 6 months</h3>${trend()}</div>`;
+}
+
+function txView(c){
+  const names=['All',...owners()];
+  let list=c.tx.slice().sort((a,b)=>b.date.localeCompare(a.date));
+  if(filter!=='All')list=list.filter(x=>x.owner===filter);
+  const tot=sum(list.map(x=>x.amount));
+  return `<div class="chips">${names.map(n=>`<button class="chip ${n===filter?'on':''}" data-f="${n}">${n}</button>`).join('')}</div>
+  <div class="card"><div class="row" style="border:0;padding:0"><b class="grow">${filter==='All'?'Everything':filter}</b><b>${peso(tot)}</b></div>
+  ${list.map(x=>`<div class="row" data-tx="${x.id}"><div class="grow"><div class="t">${x.desc}</div>
+    <div class="sub"><span class="pill ${x.owner==='Me'?'me':''}">${x.owner}</span><span class="pill">${x.source}</span><span class="pill">${x.category}</span>${x.rec?'<span class="pill">↻</span>':''}</div></div>
+    <div class="amt">${peso(x.amount)}</div></div>`).join('')||'<div class="sub" style="padding:10px 0">No entries. Tap + to add.</div>'}</div>
+  <div class="card"><h3>Income</h3>${c.inc.map(x=>`<div class="row" data-inc="${x.id}"><div class="grow">${x.label}${x.rec?' <span class="pill">↻</span>':''}</div><div class="amt good">${peso(x.amount)}</div></div>`).join('')}
+  <button class="btn alt sm" id="addInc" style="margin-top:8px">+ Add income</button></div>
+  <button class="btn alt" id="rollover" style="width:100%">↻ Copy ↻-marked items from previous month</button>`;
+}
+
+function people(c){
+  return `<div class="card"><h3>Who owes what — ${mLabel(month)}</h3>
+  ${S.people.map(p=>{const o=c.owed[p]||{charged:0,paid:0};const left=r2(o.charged-o.paid);
+   return `<div class="row"><div class="grow"><b>${p}</b><div class="sub">Charged ${peso(o.charged)} · Paid ${peso(o.paid)}</div>
+    <div class="bar"><i style="width:${o.charged?Math.min(100,o.paid/o.charged*100):0}%"></i></div></div>
+    <div style="text-align:right"><div class="amt ${left>0?'warn':'good'}">${left>0?peso(left):'Settled'}</div>
+    ${left>0?`<button class="btn sm" data-settle="${p}">Add payment</button>`:''}</div></div>`}).join('')||'<span class="sub">No people yet</span>'}
+  <div class="two" style="margin-top:10px"><button class="btn alt sm" id="addPay">+ Record payment</button><button class="btn alt sm" id="addPerson">+ Add person</button></div></div>
+  <div class="card"><h3>Payments received</h3>${c.pay.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="row" data-pay="${x.id}"><div class="grow">${x.person}<div class="sub">${x.date}${x.note?' · '+x.note:''}</div></div><div class="amt good">${peso(x.amount)}</div></div>`).join('')||'<span class="sub">None yet</span>'}</div>`;
+}
+
+function budget(c){
+  const gs=['Needs','Wants','Savings'];
+  const gSpent={Needs:0,Wants:0,Savings:0};
+  c.mine.forEach(x=>gSpent[S.groups[x.category]||'Wants']+=x.amount);
+  const inc=c.income;
+  const catSpent={};c.mine.forEach(x=>catSpent[x.category]=(catSpent[x.category]||0)+x.amount);
+  return `<div class="card"><h3>Allocation of income (${peso(inc)})</h3>
+  ${gs.map(g=>{const cap=inc*S.alloc[g]/100,sp=gSpent[g],p=cap?sp/cap*100:0;
+   return `<div style="margin:10px 0"><div class="row" style="border:0;padding:0"><b class="grow">${g} · ${S.alloc[g]}%</b><span class="amt ${sp>cap?'bad':''}">${peso(sp)} / ${peso(cap)}</span></div>
+   <div class="bar"><i class="${sp>cap?'over':''}" style="width:${Math.min(100,p)}%"></i></div>
+   <div class="sub">${sp>cap?'Over by '+peso(sp-cap):peso(cap-sp)+' left'}</div></div>`}).join('')}
+  <button class="btn alt sm" id="editAlloc">Edit percentages</button></div>
+  <div class="card"><h3>Category limits</h3>
+  ${CATS.map(k=>{const lim=S.catBudget[k]||0,sp=catSpent[k]||0;
+   return `<div style="margin:10px 0" data-cat="${k}"><div class="row" style="border:0;padding:0"><b class="grow">${k} <span class="pill">${S.groups[k]||'Wants'}</span></b><span class="amt ${lim&&sp>lim?'bad':''}">${peso(sp)}${lim?' / '+peso(lim):''}</span></div>
+   ${lim?`<div class="bar"><i class="${sp>lim?'over':''}" style="width:${Math.min(100,sp/lim*100)}%"></i></div>`:'<div class="sub">Tap to set a limit</div>'}</div>`}).join('')}</div>`;
+}
+
+function more(){
+  return `<div class="card"><h3>Backup & share</h3>
+  <p class="sub">Data lives only on this phone. Export a backup regularly.</p>
+  <div class="two"><button class="btn" id="expJson">Export backup</button><button class="btn alt" id="expCsv">Export CSV</button></div>
+  <button class="btn alt" id="copyBk" style="width:100%;margin-top:8px">Copy backup as text</button>
+  <label style="margin-top:12px">Restore from backup file</label><input type="file" id="impFile" accept=".json">
+  <label style="margin-top:12px">…or paste backup text</label><textarea id="impTxt" rows="3" style="width:100%;padding:8px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--ink)"></textarea>
+  <button class="btn alt sm" id="impTxtBtn" style="margin-top:6px">Restore from text</button>
+  </div>
+  <div class="card"><h3>Danger zone</h3><button class="btn alt" id="reset" style="color:var(--bad)">Erase everything & start empty</button></div>
+  <div class="card"><h3>About</h3><div class="sub">Rows marked ↻ are copied to next month with "Copy" in Entries. "Me" entries count toward your personal leftover; others' charges are tracked in People until paid.</div></div>`;
+}
+
+/* ---------- render ---------- */
+function render(){
+  document.getElementById('mTitle').textContent=mLabel(month);
+  const c=calc(month);
+  const v=document.getElementById('view');
+  v.innerHTML=`<div class="wrap" style="padding:0">${{home,txView,people,budget,more}[{home:'home',tx:'txView',people:'people',budget:'budget',more:'more'}[tab]](c)}</div>`;
+  document.getElementById('nav').innerHTML=[['home','🏠','Home'],['tx','🧾','Entries'],['people','👥','People'],['budget','🎯','Budget'],['more','⚙️','More']]
+    .map(([k,i,l])=>`<button class="${tab===k?'on':''}" data-tab="${k}"><b>${i}</b>${l}</button>`).join('');
+  document.getElementById('fab').style.display=(tab==='home'||tab==='tx'||tab==='people')?'block':'none';
+  wire(c);
+}
+
+/* ---------- dialogs ---------- */
+const dlg=document.getElementById('dlg');
+const opts=(a,sel)=>a.map(x=>`<option ${x===sel?'selected':''}>${x}</option>`).join('');
+function open(html,onSave){dlg.innerHTML=html;dlg.showModal();
+  dlg.querySelector('[data-cancel]')?.addEventListener('click',()=>dlg.close());
+  dlg.querySelector('form').addEventListener('submit',e=>{e.preventDefault();onSave(new FormData(e.target));dlg.close();save();render()});
+  dlg.querySelector('[data-del]')?.addEventListener('click',()=>{dlg.querySelector('form').dispatchEvent(new CustomEvent('del'))});
+}
+function txForm(x){
+  const e=x||{date:month+'-'+String(Math.min(new Date().getDate(),28)).padStart(2,'0'),desc:'',amount:'',owner:'Me',source:'Cash',category:'Other',rec:false};
+  open(`<form><h3 style="margin:0">${x?'Edit':'Add'} expense</h3>
+  <label>What</label><input name="desc" required value="${e.desc}">
+  <label>Amount</label><input name="amount" type="number" step="0.01" inputmode="decimal" required value="${e.amount}">
+  <div class="two"><div><label>Whose</label><select name="owner">${opts(owners(),e.owner)}</select></div><div><label>Paid via</label><select name="source">${opts(SOURCES,e.source)}</select></div></div>
+  <div class="two"><div><label>Category</label><select name="category">${opts(CATS,e.category)}</select></div><div><label>Date</label><input name="date" type="date" value="${e.date}"></div></div>
+  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="rec" style="width:auto" ${e.rec?'checked':''}> Repeats every month</label>
+  <div class="two" style="margin-top:14px"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-cancel>Cancel</button></div>
+  ${x?'<button class="btn alt" type="button" data-del style="width:100%;margin-top:8px;color:var(--bad)">Delete</button>':''}</form>`,
+  f=>{const d=Object.fromEntries(f);const rec={desc:d.desc,amount:+d.amount,owner:d.owner,source:d.source,category:d.category,date:d.date,rec:!!d.rec,month:d.date.slice(0,7)};
+    if(x)Object.assign(x,rec);else S.tx.push({id:uid(),...rec});month=rec.month});
+  hookDel(()=>{S.tx=S.tx.filter(t=>t!==x)},!!x);
+}
+function hookDel(fn,has){if(!has)return;dlg.querySelector('form').addEventListener('del',()=>{fn();dlg.close();save();render()})}
+function incForm(x){
+  const e=x||{label:'',amount:'',rec:false};
+  open(`<form><h3 style="margin:0">${x?'Edit':'Add'} income</h3><label>Label</label><input name="label" required value="${e.label}">
+  <label>Amount</label><input name="amount" type="number" step="0.01" inputmode="decimal" required value="${e.amount}">
+  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="rec" style="width:auto" ${e.rec?'checked':''}> Repeats every month</label>
+  <div class="two" style="margin-top:14px"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-cancel>Cancel</button></div>
+  ${x?'<button class="btn alt" type="button" data-del style="width:100%;margin-top:8px;color:var(--bad)">Delete</button>':''}</form>`,
+  f=>{const d=Object.fromEntries(f);const r={label:d.label,amount:+d.amount,rec:!!d.rec};if(x)Object.assign(x,r);else S.inc.push({id:uid(),month,...r})});
+  hookDel(()=>{S.inc=S.inc.filter(t=>t!==x)},!!x);
+}
+const quickHtml=`<div id="rem" class="sub" style="margin:6px 0"></div>
+  <div class="chips"><button type="button" class="chip" data-q="1">Full</button><button type="button" class="chip" data-q="0.5">Half</button><button type="button" class="chip" data-q="0.25">¼</button><span class="sub" style="align-self:center">or type any amount</span></div>`;
+function quickFill(getLeft){
+  const f=dlg.querySelector('form'), a=f.elements.amount, rem=dlg.querySelector('#rem');
+  const upd=()=>{const L=getLeft(f), v=+a.value||0;
+    rem.innerHTML='Remaining balance: <b>'+peso(L)+'</b>'+(v?' → after this payment: <b>'+peso(Math.max(0,L-v))+'</b>':'')};
+  dlg.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{a.value=r2(getLeft(f)*b.dataset.q);upd()});
+  a.addEventListener('input',upd);
+  f.querySelectorAll('select').forEach(s=>s.addEventListener('change',upd));
+  upd();
+}
+function payForm(x,person){
+  const e=x||{person:person||S.people[0],amount:'',date:new Date().toISOString().slice(0,10),note:''};
+  open(`<form><h3 style="margin:0">${x?'Edit':'Record'} payment received</h3><label>From</label><select name="person">${opts(S.people,e.person)}</select>
+  <label>Amount</label><input name="amount" type="number" step="0.01" inputmode="decimal" required value="${e.amount}">${quickHtml}
+  <label>Date</label><input name="date" type="date" value="${e.date}"><label>Note</label><input name="note" value="${e.note||''}">
+  <div class="two" style="margin-top:14px"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-cancel>Cancel</button></div>
+  ${x?'<button class="btn alt" type="button" data-del style="width:100%;margin-top:8px;color:var(--bad)">Delete</button>':''}</form>`,
+  f=>{const d=Object.fromEntries(f);const r={person:d.person,amount:+d.amount,date:d.date,note:d.note};if(x)Object.assign(x,r);else S.pay.push({id:uid(),month,...r})});
+  quickFill(f=>{const p=f.elements.person.value,o=calc(month).owed[p]||{charged:0,paid:0};return r2(Math.max(0,o.charged-o.paid+(x&&x.person===p?x.amount:0)))});
+  hookDel(()=>{S.pay=S.pay.filter(t=>t!==x)},!!x);
+}
+function billForm(x,source){
+  const e=x||{source:source||'Atome',amount:'',date:new Date().toISOString().slice(0,10),note:''};
+  open(`<form><h3 style="margin:0">${x?'Edit':'Pay'} bill</h3><label>Bill</label><select name="source">${opts(['Atome','ShopeePay'],e.source)}</select>
+  <label>Amount you're paying</label><input name="amount" type="number" step="0.01" inputmode="decimal" required value="${e.amount}">${quickHtml}
+  <label>Date</label><input name="date" type="date" value="${e.date}"><label>Note</label><input name="note" value="${e.note||''}">
+  <div class="two" style="margin-top:14px"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-cancel>Cancel</button></div>
+  ${x?'<button class="btn alt" type="button" data-del style="width:100%;margin-top:8px;color:var(--bad)">Delete</button>':''}</form>`,
+  f=>{const d=Object.fromEntries(f);const r={source:d.source,amount:+d.amount,date:d.date,note:d.note};if(x)Object.assign(x,r);else S.bpay.push({id:uid(),month,...r})});
+  quickFill(f=>{const s=f.elements.source.value,b=calc(month).bills.find(b=>b.s===s);return r2(Math.max(0,b.left+(x&&x.source===s?x.amount:0)))});
+  hookDel(()=>{S.bpay=S.bpay.filter(t=>t!==x)},!!x);
+}
+
+/* ---------- events ---------- */
+function wire(c){
+  const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
+  $$('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;render();scrollTo(0,0)});
+  $$('[data-f]').forEach(b=>b.onclick=()=>{filter=b.dataset.f;render()});
+  $$('[data-tx]').forEach(r=>r.onclick=()=>txForm(S.tx.find(x=>x.id===r.dataset.tx)));
+  $$('[data-inc]').forEach(r=>r.onclick=()=>incForm(S.inc.find(x=>x.id===r.dataset.inc)));
+  $$('[data-pay]').forEach(r=>r.onclick=()=>payForm(S.pay.find(x=>x.id===r.dataset.pay)));
+  $$('[data-settle]').forEach(b=>b.onclick=()=>payForm(null,b.dataset.settle));
+  $$('[data-bill]').forEach(b=>b.onclick=()=>billForm(null,b.dataset.bill));
+  $$('[data-bpay]').forEach(r=>r.onclick=()=>billForm(S.bpay.find(x=>x.id===r.dataset.bpay)));
+  $$('[data-cat]').forEach(r=>r.onclick=()=>{const k=r.dataset.cat;
+    open(`<form><h3 style="margin:0">${k} monthly limit</h3><label>Limit (0 = none)</label><input name="v" type="number" step="1" value="${S.catBudget[k]||0}">
+    <label>Group</label><select name="g">${opts(['Needs','Wants','Savings'],S.groups[k]||'Wants')}</select>
+    <div class="two" style="margin-top:14px"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-cancel>Cancel</button></div></form>`,
+    f=>{S.catBudget[k]=+f.get('v');S.groups[k]=f.get('g')})});
+  $('#addInc')&&($('#addInc').onclick=()=>incForm());
+  $('#addPay')&&($('#addPay').onclick=()=>payForm());
+  $('#addPerson')&&($('#addPerson').onclick=()=>{
+    open(`<form><h3 style="margin:0">Add person</h3><label>Name</label><input name="n" required>
+    <div class="two" style="margin-top:14px"><button class="btn" type="submit">Add</button><button class="btn alt" type="button" data-cancel>Cancel</button></div></form>`,
+    f=>{const n=f.get('n').trim();if(n&&!S.people.includes(n)&&n!=='Me')S.people.push(n)})});
+  $('#editAlloc')&&($('#editAlloc').onclick=()=>{
+    open(`<form><h3 style="margin:0">Allocation %</h3>${['Needs','Wants','Savings'].map(g=>`<label>${g}</label><input name="${g}" type="number" value="${S.alloc[g]}">`).join('')}
+    <div class="two" style="margin-top:14px"><button class="btn" type="submit">Save</button><button class="btn alt" type="button" data-cancel>Cancel</button></div></form>`,
+    f=>{['Needs','Wants','Savings'].forEach(g=>S.alloc[g]=+f.get(g))})});
+  $('#rollover')&&($('#rollover').onclick=()=>{
+    const p=shift(month,-1);let n=0;
+    S.tx.filter(x=>x.month===p&&x.rec).forEach(x=>{if(!S.tx.some(y=>y.month===month&&y.desc===x.desc&&y.owner===x.owner)){S.tx.push({...x,id:uid(),month,date:month+x.date.slice(7)});n++}});
+    S.inc.filter(x=>x.month===p&&x.rec).forEach(x=>{if(!S.inc.some(y=>y.month===month&&y.label===x.label)){S.inc.push({...x,id:uid(),month});n++}});
+    save();render();alert(n?n+' item(s) copied.':'Nothing new to copy.')});
+  $('#expJson')&&($('#expJson').onclick=()=>download('budget-backup.json',JSON.stringify(S,null,2),'application/json'));
+  $('#expCsv')&&($('#expCsv').onclick=()=>{
+    const rows=[['month','date','desc','amount','owner','source','category'],...S.tx.map(x=>[x.month,x.date,x.desc,x.amount,x.owner,x.source,x.category])];
+    download('budget-expenses.csv',rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n'),'text/csv')});
+  const restore=t=>{try{const d=JSON.parse(t);if(!d.tx)throw 0;d.bpay=d.bpay||[];d.pay=d.pay||[];d.inc=d.inc||[];d.people=d.people||[];S=d;save();render();alert('Restored.')}catch(_){alert('That is not a valid backup.')}};
+  $('#impFile')&&($('#impFile').onchange=e=>{const f=e.target.files[0];if(f)f.text().then(restore)});
+  $('#impTxtBtn')&&($('#impTxtBtn').onclick=()=>restore($('#impTxt').value.trim()));
+  $('#copyBk')&&($('#copyBk').onclick=()=>navigator.clipboard.writeText(JSON.stringify(S)).then(()=>alert('Backup copied. Paste it somewhere safe (Notes, email to yourself).'),()=>alert('Could not copy on this device.')));
+  $('#reset')&&($('#reset').onclick=()=>{if(confirm('Erase all data on this device?')){S={people:[],tx:[],pay:[],inc:[],bpay:[],alloc:{Needs:50,Wants:30,Savings:20},catBudget:{},groups:GROUP_DEFAULT};save();render()}});
+}
+async function download(name,text,type){
+  try{const f=new File([text],name,{type});if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:name});return}}catch(e){if(e&&e.name==='AbortError')return}
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click()}
+document.getElementById('prev').onclick=()=>{month=shift(month,-1);render()};
+document.getElementById('next').onclick=()=>{month=shift(month,1);render()};
+document.getElementById('fab').onclick=()=>{tab==='people'?payForm():txForm()};
+render();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
